@@ -298,15 +298,8 @@ func (f *File) AddPictureFromURI(sheet, cell, link string, opts *GraphicOptions)
 	}
 	options := parseGraphicOptions(opts)
 
-	resp, err := http.Get(link)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	img, _, err := image.DecodeConfig(resp.Body)
-	if err != nil {
-		return err
-	}
+	width, height := defaultShapeSize, defaultShapeSize
+
 
 	f.mu.Lock()
 	ws, err := f.workSheetReader(sheet)
@@ -332,7 +325,8 @@ func (f *File) AddPictureFromURI(sheet, cell, link string, opts *GraphicOptions)
 	}
 	ws.mu.Unlock()
 
-	err = f.addDrawingPictureLink(sheet, drawingXML, cell, ext, drawingRID, drawingHyperlinkRID, img, options)
+	err = f.addDrawingPictureLink(sheet, drawingXML, cell, ext, drawingRID, drawingHyperlinkRID, width, height, options)
+
 	if err != nil {
 		return err
 	}
@@ -503,7 +497,9 @@ func (f *File) addDrawingPicture(sheet, drawingXML, cell, ext string, rID, hyper
 
 // addDrawingPictureLink provides a function to add picture using external link by given sheet,
 // drawingXML, cell, file extension, width, height relationship index and format sets.
-func (f *File) addDrawingPictureLink(sheet, drawingXML, cell, ext string, rID, hyperlinkRID int, img image.Config, opts *GraphicOptions) error {
+
+func (f *File) addDrawingPictureLink(sheet, drawingXML, cell, ext string, rID, hyperlinkRID int, width, height int, opts *GraphicOptions) error {
+
 	col, row, err := CellNameToCoordinates(cell)
 	if err != nil {
 		return err
@@ -511,6 +507,7 @@ func (f *File) addDrawingPictureLink(sheet, drawingXML, cell, ext string, rID, h
 	if opts.Positioning != "" && inStrSlice(supportedPositioning, opts.Positioning, true) == -1 {
 		return newInvalidOptionalValue("Positioning", opts.Positioning, supportedPositioning)
 	}
+
 	width, height := img.Width, img.Height
 	if opts.AutoFit {
 		if width, height, col, row, err = f.drawingResize(sheet, cell, float64(width), float64(height), opts); err != nil {
