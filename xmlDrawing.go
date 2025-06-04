@@ -63,7 +63,8 @@ type xlsxPicLocks struct {
 // xlsxBlip element specifies the existence of an image (binary large image or
 // picture) and contains a reference to the image data.
 type xlsxBlip struct {
-	Embed   string                        `xml:"r:embed,attr"`
+	Embed   string                        `xml:"r:embed,attr,omitempty"`
+	Link    string                        `xml:"r:link,attr,omitempty"`
 	Cstate  string                        `xml:"cstate,attr,omitempty"`
 	R       string                        `xml:"xmlns:r,attr"`
 	ExtList *xlsxEGOfficeArtExtensionList `xml:"a:extLst"`
