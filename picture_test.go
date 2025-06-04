@@ -328,6 +328,18 @@ func TestAddPictureFromBytes(t *testing.T) {
 	assert.EqualError(t, f.AddPictureFromBytes("Sheet:1", fmt.Sprint("A", 1), &Picture{Extension: ".png", File: imgFile, Format: &GraphicOptions{AltText: "logo"}}), ErrSheetNameInvalid.Error())
 }
 
+func TestAddPictureFromURI(t *testing.T) {
+	f := NewFile()
+	assert.NoError(t, f.AddPictureFromURI("Sheet1", "A1",
+		"https://raw.githubusercontent.com/xuri/excelize/master/logo.png", nil))
+	assert.NoError(t, f.SaveAs(filepath.Join("test", "TestAddPictureFromURI.xlsx")))
+	assert.NoError(t, f.Close())
+
+	f, err := OpenFile(filepath.Join("test", "TestAddPictureFromURI.xlsx"))
+	assert.NoError(t, err)
+	assert.NoError(t, f.Close())
+}
+
 func TestDeletePicture(t *testing.T) {
 	f, err := OpenFile(filepath.Join("test", "Book1.xlsx"))
 	assert.NoError(t, err)

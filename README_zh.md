@@ -228,6 +228,11 @@ func main() {
         }); err != nil {
         fmt.Println(err)
     }
+    // 直接引用远程图片，不在工作簿中嵌入图片数据
+    if err := f.AddPictureFromURI("Sheet1", "B2",
+        "https://raw.githubusercontent.com/xuri/excelize/master/logo.png", nil); err != nil {
+        fmt.Println(err)
+    }
     // 保存工作簿
     if err = f.Save(); err != nil {
         fmt.Println(err)

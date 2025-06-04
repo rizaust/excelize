@@ -228,6 +228,11 @@ func main() {
         }); err != nil {
         fmt.Println(err)
     }
+    // Insert an external picture reference without embedding image data.
+    if err := f.AddPictureFromURI("Sheet1", "B2",
+        "https://raw.githubusercontent.com/xuri/excelize/master/logo.png", nil); err != nil {
+        fmt.Println(err)
+    }
     // Save the spreadsheet with the origin path.
     if err = f.Save(); err != nil {
         fmt.Println(err)

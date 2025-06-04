@@ -286,6 +286,53 @@ func (f *File) AddPictureFromBytes(sheet, cell string, pic *Picture) error {
 	return err
 }
 
+// AddPictureFromURI adds picture by given remote URI. The image will not be embedded
+// in the workbook, instead it will be referenced via r:link relationship.
+func (f *File) AddPictureFromURI(sheet, cell, link string, opts *GraphicOptions) error {
+	var drawingHyperlinkRID int
+	var hyperlinkType string
+	ext := strings.ToLower(path.Ext(link))
+	if _, ok := supportedImageTypes[ext]; !ok {
+		return ErrImgExt
+	}
+	options := parseGraphicOptions(opts)
+	width, height := defaultShapeSize, defaultShapeSize
+
+	f.mu.Lock()
+	ws, err := f.workSheetReader(sheet)
+	if err != nil {
+		f.mu.Unlock()
+		return err
+	}
+	f.mu.Unlock()
+
+	ws.mu.Lock()
+	drawingID := f.countDrawings() + 1
+	drawingXML := "xl/drawings/drawing" + strconv.Itoa(drawingID) + ".xml"
+	drawingID, drawingXML = f.prepareDrawing(ws, drawingID, sheet, drawingXML)
+	drawingRels := "xl/drawings/_rels/drawing" + strconv.Itoa(drawingID) + ".xml.rels"
+
+	drawingRID := f.addRels(drawingRels, SourceRelationshipImage, link, "External")
+
+	if options.Hyperlink != "" && options.HyperlinkType != "" {
+		if options.HyperlinkType == "External" {
+			hyperlinkType = options.HyperlinkType
+		}
+		drawingHyperlinkRID = f.addRels(drawingRels, SourceRelationshipHyperLink, options.Hyperlink, hyperlinkType)
+	}
+	ws.mu.Unlock()
+
+	err = f.addDrawingPictureLink(sheet, drawingXML, cell, ext, drawingRID, drawingHyperlinkRID, width, height, options)
+	if err != nil {
+		return err
+	}
+	if err = f.addContentTypePart(drawingID, "drawings"); err != nil {
+		return err
+	}
+	f.addSheetNameSpace(sheet, SourceRelationship)
+	return err
+}
+
 // addSheetLegacyDrawing provides a function to add legacy drawing element to
 // xl/worksheets/sheet%d.xml by given worksheet name and relationship index.
 func (f *File) addSheetLegacyDrawing(sheet string, rID int) {
@@ -410,6 +457,102 @@ func (f *File) addDrawingPicture(sheet, drawingXML, cell, ext string, rID, hyper
 					SVGBlip: xlsxCTSVGBlip{
 						XMLNSaAVG: NameSpaceDrawing2016SVG.Value,
 						Embed:     pic.BlipFill.Blip.Embed,
+					},
+				},
+			},
+		}
+	}
+	pic.SpPr.PrstGeom.Prst = "rect"
+
+	if opts.Positioning == "oneCell" {
+		cx := x2 * EMU
+		cy := y2 * EMU
+		cellAnchor.Ext = &xlsxPositiveSize2D{
+			Cx: cx,
+			Cy: cy,
+		}
+		pic.SpPr.Xfrm.Ext.Cx = cx
+		pic.SpPr.Xfrm.Ext.Cy = cy
+	}
+
+	cellAnchor.Pic = &pic
+	cellAnchor.ClientData = &xdrClientData{
+		FLocksWithSheet:  *opts.Locked,
+		FPrintsWithSheet: *opts.PrintObject,
+	}
+	content.mu.Lock()
+	defer content.mu.Unlock()
+	if opts.Positioning == "oneCell" {
+		content.OneCellAnchor = append(content.OneCellAnchor, &cellAnchor)
+	} else {
+		content.TwoCellAnchor = append(content.TwoCellAnchor, &cellAnchor)
+	}
+	f.Drawings.Store(drawingXML, content)
+	return err
+}
+
+// addDrawingPictureLink provides a function to add picture using external link by given sheet,
+// drawingXML, cell, file extension, width, height relationship index and format sets.
+func (f *File) addDrawingPictureLink(sheet, drawingXML, cell, ext string, rID, hyperlinkRID int, width, height int, opts *GraphicOptions) error {
+	col, row, err := CellNameToCoordinates(cell)
+	if err != nil {
+		return err
+	}
+	if opts.Positioning != "" && inStrSlice(supportedPositioning, opts.Positioning, true) == -1 {
+		return newInvalidOptionalValue("Positioning", opts.Positioning, supportedPositioning)
+	}
+	if opts.AutoFit {
+		if width, height, col, row, err = f.drawingResize(sheet, cell, float64(width), float64(height), opts); err != nil {
+			return err
+		}
+	} else {
+		width = int(float64(width) * opts.ScaleX)
+		height = int(float64(height) * opts.ScaleY)
+	}
+	colStart, rowStart, colEnd, rowEnd, x1, y1, x2, y2 := f.positionObjectPixels(sheet, col, row, width, height, opts)
+	content, cNvPrID, err := f.drawingParser(drawingXML)
+	if err != nil {
+		return err
+	}
+	cellAnchor := xdrCellAnchor{}
+	from := xlsxFrom{}
+	from.Col = colStart
+	from.ColOff = x1 * EMU
+	from.Row = rowStart
+	from.RowOff = y1 * EMU
+	cellAnchor.From = &from
+
+	if opts.Positioning != "oneCell" {
+		to := xlsxTo{}
+		to.Col = colEnd
+		to.ColOff = x2 * EMU
+		to.Row = rowEnd
+		to.RowOff = y2 * EMU
+		cellAnchor.To = &to
+		cellAnchor.EditAs = opts.Positioning
+	}
+
+	pic := xlsxPic{}
+	pic.NvPicPr.CNvPicPr.PicLocks.NoChangeAspect = opts.LockAspectRatio
+	pic.NvPicPr.CNvPr.ID = cNvPrID
+	pic.NvPicPr.CNvPr.Descr = opts.AltText
+	pic.NvPicPr.CNvPr.Name = "Picture " + strconv.Itoa(cNvPrID)
+	if hyperlinkRID != 0 {
+		pic.NvPicPr.CNvPr.HlinkClick = &xlsxHlinkClick{
+			R:   SourceRelationship.Value,
+			RID: "rId" + strconv.Itoa(hyperlinkRID),
+		}
+	}
+	pic.BlipFill.Blip.R = SourceRelationship.Value
+	pic.BlipFill.Blip.Link = "rId" + strconv.Itoa(rID)
+	if ext == ".svg" {
+		pic.BlipFill.Blip.ExtList = &xlsxEGOfficeArtExtensionList{
+			Ext: []xlsxCTOfficeArtExtension{
+				{
+					URI: ExtURISVG,
+					SVGBlip: xlsxCTSVGBlip{
+						XMLNSaAVG: NameSpaceDrawing2016SVG.Value,
+						Link:      pic.BlipFill.Blip.Link,
 					},
 				},
 			},
