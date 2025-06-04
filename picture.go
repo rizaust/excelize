@@ -16,6 +16,7 @@ import (
 	"encoding/xml"
 	"image"
 	"io"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -296,7 +297,9 @@ func (f *File) AddPictureFromURI(sheet, cell, link string, opts *GraphicOptions)
 		return ErrImgExt
 	}
 	options := parseGraphicOptions(opts)
+
 	width, height := defaultShapeSize, defaultShapeSize
+
 
 	f.mu.Lock()
 	ws, err := f.workSheetReader(sheet)
@@ -323,6 +326,7 @@ func (f *File) AddPictureFromURI(sheet, cell, link string, opts *GraphicOptions)
 	ws.mu.Unlock()
 
 	err = f.addDrawingPictureLink(sheet, drawingXML, cell, ext, drawingRID, drawingHyperlinkRID, width, height, options)
+
 	if err != nil {
 		return err
 	}
@@ -493,7 +497,9 @@ func (f *File) addDrawingPicture(sheet, drawingXML, cell, ext string, rID, hyper
 
 // addDrawingPictureLink provides a function to add picture using external link by given sheet,
 // drawingXML, cell, file extension, width, height relationship index and format sets.
+
 func (f *File) addDrawingPictureLink(sheet, drawingXML, cell, ext string, rID, hyperlinkRID int, width, height int, opts *GraphicOptions) error {
+
 	col, row, err := CellNameToCoordinates(cell)
 	if err != nil {
 		return err
@@ -501,6 +507,8 @@ func (f *File) addDrawingPictureLink(sheet, drawingXML, cell, ext string, rID, h
 	if opts.Positioning != "" && inStrSlice(supportedPositioning, opts.Positioning, true) == -1 {
 		return newInvalidOptionalValue("Positioning", opts.Positioning, supportedPositioning)
 	}
+
+	width, height := img.Width, img.Height
 	if opts.AutoFit {
 		if width, height, col, row, err = f.drawingResize(sheet, cell, float64(width), float64(height), opts); err != nil {
 			return err
